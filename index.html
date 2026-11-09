@@ -16,21 +16,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://xbqvohwtjkpfrlczktfl.supabase.co" crossorigin />
   <link rel="stylesheet" href="css/style.css" />
-  <script type="importmap">
-  {
-    "imports": {
-      "preact": "https://esm.sh/preact@10.24.3",
-      "preact/hooks": "https://esm.sh/preact@10.24.3/hooks",
-      "htm": "https://esm.sh/htm@3.1.1",
-      "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
-      "jspdf": "https://esm.sh/jspdf@2.5.2"
-    }
-  }
-  </script>
+  <link rel="modulepreload" href="app.js" />
 </head>
 <body>
   <div id="app"><div class="boot">Chargement…</div></div>
-  <script type="module" src="src/main.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
