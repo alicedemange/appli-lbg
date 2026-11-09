@@ -626,3 +626,5 @@ a.chat-row { color: var(--ink); }
 }
 .pin-wrap { display: flex; gap: 6px; align-items: center; } .pin-wrap input { flex: 1; }
 .login-err { background: #fbe9e7; border: 1px solid #e3a49d; color: #8c2f27; border-radius: 12px; padding: 10px 12px; font-size: 14px; font-weight: 600; }
+.boot-help { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: 420px; text-align: center; padding: 0 16px; }
+.boot-btns { display: flex; gap: 8px; }
