@@ -9,11 +9,11 @@ let sb = null;
 export async function initDb() {
   if (DEMO) return;
   const { createClient } = await import('@supabase/supabase-js');
-  sb = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+  sb = createClient(CONFIG.SUPABASE_URL.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, ''), CONFIG.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
 }
 
 // ── Mode démo : base en mémoire + localStorage ───────────────
-const KEY = 'lbg-demo-v7';
+const KEY = 'lbg-demo-v8';
 let mem = null;
 let demoUser = null; // repli si localStorage est indisponible
 function store() {
@@ -205,7 +205,14 @@ export async function acceptDoc(id, name, meId) {
   const { error } = await sb.rpc('accept_document', { p_id: id, p_name: name }); if (error) throw tr(error);
 }
 
-// ── Authentification ─────────────────────────────────────────
+// ── Authentification : prénom (identifiant) + code PIN ───────
+/** « Chloé », « Alice D. » → « chloe », « alice.d » */
+export const loginSlug = (s = '') => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
+const loginEmail = (slug) => `${slug}@${CONFIG.LOGIN_DOMAIN || 'membres.ecurie-active-lbg.fr'}`;
+const cleanPin = (pin = '') => pin.replace(/\s+/g, '').toUpperCase();
+const BAD = 'Prénom ou code PIN incorrect.';
+export const DEMO_PIN = 'LBG123';
+
 export const auth = {
   async current() {
     if (DEMO) {
@@ -219,34 +226,58 @@ export const auth = {
   },
   demoProfiles: () => store().profiles,
   demoLogin(id) { demoUser = id; try { localStorage.setItem('lbg-demo-user', id); } catch (e) {} },
-  async signIn(email, password) {
-    const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password }); if (error) throw tr(error);
-  },
-  async signUp({ code, email, password, full_name, phone }) {
-    const { data, error } = await sb.auth.signUp({ email: email.trim(), password, options: { data: { full_name } } });
+  /**
+   * Connexion avec le prénom (identifiant) et le code PIN.
+   * 1re fois : le code PIN donné par l'écurie crée le compte automatiquement.
+   */
+  async pinLogin(name, pin) {
+    const slug = loginSlug(name); const code = cleanPin(pin);
+    if (!slug || code.length < 6) throw new Error(BAD);
+    if (DEMO) {
+      const p = store().profiles.find((x) => (x.login && x.login === slug) || loginSlug(x.full_name) === slug || loginSlug(x.full_name.split(' ')[0]) === slug);
+      if (!p || code !== DEMO_PIN) throw new Error(`${BAD} (Démo : un prénom de l’écurie, ex. « Chloé », et le code ${DEMO_PIN})`);
+      auth.demoLogin(p.id); return;
+    }
+    const email = loginEmail(slug);
+    const first = await sb.auth.signInWithPassword({ email, password: code });
+    if (!first.error) return;
+    if (!/invalid login credentials/i.test(first.error.message)) throw tr(first.error);
+    // Première connexion ? On vérifie le code PIN d'accès avant de créer le compte.
+    const { data: ok, error: e1 } = await sb.rpc('check_first_login', { p_login: slug, p_code: code });
+    if (e1) throw tr(e1);
+    if (ok === 'bloque') throw new Error('Trop d’essais avec ce prénom : demande un nouveau code PIN à Nathalie.');
+    if (ok !== 'ok') throw new Error(BAD);
+    const { data, error } = await sb.auth.signUp({ email, password: code, options: { data: { full_name: name.trim() } } });
     if (error) throw tr(error);
-    if (!data.session) return 'confirm';
-    return auth.claim(code, full_name, phone);
+    if (!data.session) throw new Error('Réglage Supabase à faire : désactive « Confirm email » (Authentication › Sign In / Providers › Email).');
+    const r = await auth.claim(code);
+    if (r !== 'ok') throw new Error(r);
   },
-  /** Utilise le code PIN : renvoie 'ok' ou un message d'erreur (5 essais maximum). */
+  /** Relie le compte à l'écurie avec le code PIN : renvoie 'ok' ou un message d'erreur. */
   async claim(code, full_name, phone) {
-    const { data, error } = await sb.rpc('claim_invitation', { p_code: code.trim().toUpperCase(), p_full_name: full_name || null, p_phone: phone || null });
+    const { data, error } = await sb.rpc('claim_invitation', { p_code: cleanPin(code), p_full_name: full_name || null, p_phone: phone || null });
     if (error) throw tr(error);
     if (data === 'ok') return 'ok';
-    if (data === 'bloque') return 'Trop d’essais : demande à Nathalie d’activer ton compte.';
+    if (data === 'bloque') return 'Trop d’essais : demande un nouveau code PIN à Nathalie.';
     return `Code PIN incorrect ou expiré (${data.split(':')[1] || '?'} essai(s) restant(s)).`;
+  },
+  /** Changer son propre code PIN (6 caractères minimum). */
+  async changePin(pin) {
+    const code = cleanPin(pin);
+    if (code.length < 6) throw new Error('Le code PIN doit faire au moins 6 caractères.');
+    if (DEMO) return code;
+    const { error } = await sb.auth.updateUser({ password: code }); if (error) throw tr(error);
+    return code;
+  },
+  /** Admin : génère un nouveau code PIN pour un membre (code oublié). */
+  async adminResetPin(profileId) {
+    if (DEMO) return 'NEW' + Math.random().toString(36).slice(2, 5).toUpperCase();
+    const { data, error } = await sb.rpc('admin_reset_pin', { p_profile: profileId }); if (error) throw tr(error);
+    return data;
   },
   async signOut() {
     if (DEMO) { demoUser = null; try { localStorage.removeItem('lbg-demo-user'); } catch (e) {} return; }
     await sb.auth.signOut();
-  },
-  async resetPassword(email) {
-    const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: location.origin + location.pathname });
-    if (error) throw tr(error);
-  },
-  async updatePassword(password) {
-    if (DEMO) return;
-    const { error } = await sb.auth.updateUser({ password }); if (error) throw tr(error);
   },
   onChange(cb) { if (!DEMO) sb.auth.onAuthStateChange((ev) => cb(ev)); },
 };

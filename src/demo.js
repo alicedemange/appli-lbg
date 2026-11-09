@@ -17,7 +17,7 @@ export function buildDemoData() {
     ['Gégé', 'archive'], ['Camille', 'nouveau'],
   ];
   const profiles = people.map(([full_name, role], i) => ({
-    id: id('p'), full_name, role, phone: `06 00 00 ${String(10 + i).padStart(2, '0')} ${String(20 + i).padStart(2, '0')}`,
+    id: id('p'), full_name, role, login: full_name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '.'), login_label: full_name, phone: `06 00 00 ${String(10 + i).padStart(2, '0')} ${String(20 + i).padStart(2, '0')}`,
     email: '', claim_failures: full_name === 'Camille' ? 2 : 0, archived_at: role === 'archive' ? addDays(todayISO(), -45) + 'T10:00:00Z' : null, licence_ffe: role !== 'admin' && i % 3 ? `${1234500 + i}A` : '', licence_year: i % 4 ? 2027 : 2026, color: null, created_at: now,
   }));
   const P = Object.fromEntries(profiles.map((p) => [p.full_name, p.id]));

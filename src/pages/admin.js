@@ -1,5 +1,5 @@
 import { html, useState } from '../lib.js';
-import { db, auth, DEMO, resetDemo } from '../db.js';
+import { db, auth, DEMO, resetDemo, loginSlug } from '../db.js';
 import { useApp, Icon, Avatar, HorseAvatar, Modal, openModal, confirmBox, toast, fail, useForm, Field, Seg, ChipPick, Badge, useData, PageHead, Empty, Loading, Tabs } from '../ui.js';
 import { todayISO, fmtDate, fmtTime, HEALTH_TYPES, EVENT_TYPES, ROLES, SEXES, cls, genCode, csv, downloadText } from '../util.js';
 import { PRES_KINDS } from './planning.js';
@@ -73,10 +73,14 @@ export function Membres() {
   const archived = app.profiles.filter((p) => p.role === 'archive');
   const setRole = async (p, role) => { if (p.id === app.me.id) return toast('Tu ne peux pas changer ton propre rôle', 'err'); await db.update('profiles', p.id, { role, claim_failures: 0 }).catch(fail); app.reloadBase(); };
   const pdf = (p) => import('../pdf.js').then((m) => m.dossierPdf(app, p)).catch(fail);
+  const resetPin = async (p) => {
+    if (!(await confirmBox(`Créer un nouveau code PIN pour ${p.full_name} ? L’ancien ne marchera plus.`, { ok: 'Nouveau code PIN' }))) return;
+    try { const code = await auth.adminResetPin(p.id); showMessage(pinMessage(p.full_name, p.login_label || p.full_name.split(' ')[0], code), 'Nouveau code PIN de ' + p.full_name); } catch (e) { fail(e); }
+  };
   const year = new Date().getMonth() >= 8 ? new Date().getFullYear() + 1 : new Date().getFullYear();
   const horsesOf = (p) => [...app.horses.filter((h) => h.owner_id === p.id && !h.departure_date).map((h) => h.name), ...app.riders.filter((r) => r.profile_id === p.id).map((r) => r.kind + ' ' + app.H[r.horse_id]?.name)].join(', ');
   return html`<section class="page">
-    <${PageHead} title="Membres & accès" sub="Chaque nouveau propriétaire ou cavalier reçoit un code PIN d’accès, obligatoire pour sa première connexion.">
+    <${PageHead} title="Membres & accès" sub="Chacun entre dans l’appli avec son prénom et son code PIN. Code oublié : « 🔑 Nouveau PIN ».">
       <button class="btn primary" onClick=${() => openInvite(app, reload)}><${Icon} n="key" size=${18} /> Créer un code PIN</button>
     </${PageHead}>
     <${Tabs} value=${tab} onChange=${setTab} tabs=${[['membres', `👥 Membres (${app.members.length})`], ['codes', `🔑 Codes PIN (${pending.length + waiting.length})`], ['anciens', `🗄️ Anciens (${archived.length})`], ['licences', `🎫 Licences ${year}`]]} />
@@ -85,16 +89,17 @@ export function Membres() {
         <ul class="plist">${waiting.map((p) => html`<li><span class="pname"><${Avatar} p=${p} size=${28} /><span><b>${p.full_name}</b><small>${[p.email, p.claim_failures && `${p.claim_failures} essai(s) raté(s)`].filter(Boolean).map((x) => ' · ' + x).join('')}</small></span></span><span class="grow"></span>
           <select class="mini" onChange=${(e) => e.target.value && setRole(p, e.target.value)}><option value="">Activer comme…</option><option value="proprietaire">Propriétaire</option><option value="dp">DP / TP</option><option value="admin">Admin</option></select></li>`)}</ul></div>`}
       ${!pending.length ? html`<${Empty} icon="🔑" title="Aucun code en attente" text="Crée un code PIN pour inviter quelqu’un : tu choisis son espace et ses chevaux, il n’a plus qu’à créer son compte." />`
-      : html`<div class="codes">${pending.map((i) => html`<div class="code-card"><div class="code">${i.code}</div><div><b>${i.full_name}</b><br /><small>${ROLES[i.role]?.label}${i.horse_ids?.length ? ' · ' + i.horse_ids.map((h) => app.H[h]?.name).join(', ') : ''}</small><br /><small class="muted">créé le ${fmtDate(i.created_at.slice(0, 10))} · valable 30 jours</small></div>
+      : html`<div class="codes">${pending.map((i) => html`<div class="code-card"><div class="code">${i.code}</div><div><b>${i.full_name}</b> <small class="muted">· prénom de connexion : ${i.login_label || i.login}</small><br /><small>${ROLES[i.role]?.label}${i.horse_ids?.length ? ' · ' + i.horse_ids.map((h) => app.H[h]?.name).join(', ') : ''}</small><br /><small class="muted">créé le ${fmtDate(i.created_at.slice(0, 10))} · pas encore utilisé · valable 30 jours</small></div>
           <div class="code-act"><button class="btn small" onClick=${() => copyInvite(i)}><${Icon} n="copy" size=${14} /> Message</button>
           <button class="icon-btn" aria-label="Supprimer" onClick=${async () => { if (await confirmBox('Supprimer ce code ?', { ok: 'Supprimer', danger: true })) { await db.remove('invitations', i.id).catch(fail); reload(); } }}><${Icon} n="trash" size=${16} /></button></div></div>`)}</div>`}
-      <p class="hint">🔒 Un code PIN ne sert qu’une fois et expire après 30 jours. Après 5 codes faux, le compte est bloqué jusqu’à ce que tu l’actives.</p>`}
+      <p class="hint">🔒 Un code PIN non utilisé expire après 30 jours. Après la 1re connexion, il devient le code personnel de la personne (elle peut le changer dans « Mon profil »).</p>`}
     ${tab === 'membres' && html`<div class="card scroll-x"><table class="table">
-      <thead><tr><th>Membre</th><th>Rôle</th><th>Chevaux</th><th>Téléphone</th><th></th></tr></thead>
-      <tbody>${app.members.map((p) => html`<tr><td><span class="pname"><${Avatar} p=${p} size=${28} /><b>${p.full_name || p.email}</b></span></td>
+      <thead><tr><th>Membre</th><th>Prénom de connexion</th><th>Rôle</th><th>Chevaux</th><th>Téléphone</th><th></th></tr></thead>
+      <tbody>${app.members.map((p) => html`<tr><td><span class="pname"><${Avatar} p=${p} size=${28} /><b>${p.full_name || '?'}</b></span></td>
+        <td><small>${p.login_label || p.login || '—'}</small></td>
         <td><select value=${p.role} disabled=${p.id === app.me.id} onChange=${(e) => setRole(p, e.target.value)}>${['admin', 'proprietaire', 'dp'].map((k) => html`<option value=${k}>${ROLES[k].label}</option>`)}</select></td>
         <td><small>${horsesOf(p)}</small></td><td><small>${p.phone || '—'}</small></td>
-        <td><div class="member-actions"><button class="btn small ghost" title="Dossier PDF" onClick=${() => pdf(p)}>📄 PDF</button>
+        <td><div class="member-actions">${p.id !== app.me.id && html`<button class="btn small ghost" title="Code PIN oublié" onClick=${() => resetPin(p)}>🔑 Nouveau PIN</button>`}<button class="btn small ghost" title="Dossier PDF" onClick=${() => pdf(p)}>📄 PDF</button>
           ${p.id !== app.me.id && html`<button class="btn small ghost" onClick=${() => openArchiveMember(app, p)}>🗄️ Archiver</button>`}</div></td></tr>`)}</tbody></table></div>
       <p class="hint">Quand quelqu’un quitte l’écurie : « Archiver ». Il n’a plus accès à l’appli, mais tout son historique est conservé (et réactivable).</p>`}
     ${tab === 'anciens' && html`${!archived.length ? html`<${Empty} icon="🗄️" title="Aucun ancien membre" />` : html`<div class="card"><ul class="plist">${archived.map((p) => html`<li>
@@ -138,22 +143,34 @@ function ArchiveMember({ p, close }) {
       <p class="hint" style="margin:0">Ses inscriptions à venir seront retirées${app.riders.some((r) => r.profile_id === p.id) ? ' et sa demi-pension / tiers de pension arrêtée' : ''}.</p>
     </div></${Modal}>`;
 }
-function copyInvite(i) {
-  const msg = `Bonjour ${i.full_name} ! 🐴\nVoici ton code PIN d’accès à l’appli des Écuries la Barthe Grande : ${i.code}\n1. Ouvre ${location.origin + location.pathname}\n2. « Première connexion ? J’ai un code PIN »\n3. Entre le code PIN, ton e-mail et choisis un mot de passe.\n(Le code ne sert qu’une fois et expire dans 30 jours.)\nÀ très vite à l’écurie !`;
-  openModal((close) => html`<${Modal} title="Message à envoyer" close=${close} footer=${html`<button class="btn primary" onClick=${async () => { try { await navigator.clipboard.writeText(msg); toast('Copié ! Colle-le dans WhatsApp ou par SMS'); close(); } catch (e) { toast('Sélectionne le texte et copie-le à la main', 'err'); } }}><${Icon} n="copy" size=${16} /> Copier</button>`}>
+export function pinMessage(name, login, code) {
+  return `Bonjour ${name.split(' ')[0]} ! 🐴\nVoici ton accès à l’appli des Écuries la Barthe Grande :\n👉 ${location.origin + location.pathname}\nPrénom : ${login}\nCode PIN : ${code}\nTape simplement ton prénom et ton code PIN pour entrer (garde-le précieusement, il te servira à chaque connexion).\nÀ très vite à l’écurie !`;
+}
+export function showMessage(msg, title = 'Message à envoyer') {
+  openModal((close) => html`<${Modal} title=${title} close=${close} footer=${html`<button class="btn primary" onClick=${async () => { try { await navigator.clipboard.writeText(msg); toast('Copié ! Colle-le dans WhatsApp ou par SMS'); close(); } catch (e) { toast('Sélectionne le texte et copie-le à la main', 'err'); } }}><${Icon} n="copy" size=${16} /> Copier</button>`}>
     <textarea class="msg" rows="8" readonly value=${msg} onFocus=${(e) => e.target.select()}></textarea></${Modal}>`);
 }
+function copyInvite(i) { showMessage(pinMessage(i.full_name, i.login_label || i.full_name.split(' ')[0], i.code)); }
 function openInvite(app, reload) { openModal((close) => html`<${InviteForm} close=${close} reload=${reload} />`); }
 function InviteForm({ close, reload }) {
   const app = useApp();
-  const f = useForm({ full_name: '', role: 'proprietaire', horse_ids: [], rider_kind: 'DP' });
+  const f = useForm({ full_name: '', login_label: '', role: 'proprietaire', horse_ids: [], rider_kind: 'DP' });
+  const [touched, setTouched] = useState(false);
+  const label = touched ? f.v.login_label : f.v.full_name.trim().split(/\s+/)[0] || '';
+  const slug = loginSlug(label);
+  const taken = (sl) => app.profiles.some((p) => p.login === sl) || (invs || []).some((i) => i.login === sl && !i.used_by);
+  const [invs] = useData(() => db.select('invitations'), []);
   const save = async (e) => {
     e.preventDefault();
-    try { const [i] = await db.insert('invitations', { code: genCode(), full_name: f.v.full_name.trim(), role: f.v.role, horse_ids: f.v.horse_ids, rider_kind: f.v.rider_kind }); close(); reload(); copyInvite(i); } catch (er) { fail(er); }
+    if (!slug) return toast('Indique un prénom de connexion', 'err');
+    if (taken(slug)) return toast(`« ${label} » est déjà pris : ajoute l’initiale du nom (ex. ${label} D)`, 'err');
+    try { const [i] = await db.insert('invitations', { code: genCode(), full_name: f.v.full_name.trim(), login: slug, login_label: label, role: f.v.role, horse_ids: f.v.horse_ids, rider_kind: f.v.rider_kind }); close(); reload(); copyInvite(i); } catch (er) { fail(er); }
   };
   return html`<${Modal} title="Nouveau code PIN d’accès" icon="🔑" close=${close} footer=${html`<button class="btn ghost" onClick=${close}>Annuler</button><button class="btn primary" form="invf">Générer le code PIN</button>`}>
     <form id="invf" class="form" onSubmit=${save}>
-      <${Field} label="Prénom / nom"><input required placeholder="Ex. Lyna" ...${f.bind('full_name')} /></${Field}>
+      <${Field} label="Prénom / nom"><input required placeholder="Ex. Lyna Nicolaescu" ...${f.bind('full_name')} /></${Field}>
+      <${Field} label="Prénom de connexion" hint=${slug && taken(slug) ? '⚠️ Déjà utilisé : ajoute l’initiale du nom (ex. « Alice D »).' : 'C’est ce qu’il tapera avec son code PIN pour entrer (accents et majuscules sans importance).'}>
+        <input required value=${label} onInput=${(e) => { setTouched(true); f.set('login_label', e.target.value); }} /></${Field}>
       <${Field} label="Espace"><${Seg} value=${f.v.role} onChange=${(k) => f.set('role', k)} options=${[['proprietaire', '🐴 Propriétaire'], ['dp', '🏇 DP / TP'], ['admin', '🔑 Admin']]} /></${Field}>
       ${f.v.role === 'dp' && html`<${Field} label="Formule"><${Seg} small value=${f.v.rider_kind} onChange=${(k) => f.set('rider_kind', k)} options=${[['DP', 'Demi-pension'], ['TP', 'Tiers de pension']]} /></${Field}>`}
       ${f.v.role !== 'admin' && html`<${Field} label=${f.v.role === 'dp' ? 'Cheval monté' : 'Ses chevaux déjà dans l’appli (optionnel)'} hint=${f.v.role === 'proprietaire' ? 'Il pourra aussi créer lui-même la fiche de son cheval.' : ''}>
@@ -177,8 +194,10 @@ export function Profil() {
       <${Field} label="Ma couleur"><div class="colors">${colors.map((c) => html`<button type="button" class=${cls('color', f.v.color === c && 'on')} style=${`background:${c}`} onClick=${() => f.set('color', c)} aria-label=${c}></button>`)}</div></${Field}>
       <div class="right"><button class="btn primary">Enregistrer</button></div>
     </form>
-    ${!DEMO && html`<form class="card form" onSubmit=${async (e) => { e.preventDefault(); try { await auth.updatePassword(pw); setPw(''); toast('Mot de passe changé'); } catch (er) { fail(er); } }}>
-      <h3>🔒 Changer mon mot de passe</h3><div class="inline-form"><input type="password" minlength="6" placeholder="Nouveau mot de passe" value=${pw} onInput=${(e) => setPw(e.target.value)} /><button class="btn" disabled=${pw.length < 6}>Changer</button></div></form>`}
+    <form class="card form" onSubmit=${async (e) => { e.preventDefault(); try { const c = await auth.changePin(pw); setPw(''); toast('Nouveau code PIN : ' + c); } catch (er) { fail(er); } }}>
+      <h3>🔑 Mon accès</h3><p class="small muted" style="margin:0">Prénom de connexion : <b>${me.login_label || me.login || me.full_name?.split(' ')[0]}</b></p>
+      <div class="inline-form"><input minlength="6" maxlength="12" autocapitalize="characters" placeholder="Nouveau code PIN (6 caractères min.)" value=${pw} onInput=${(e) => setPw(e.target.value)} /><button class="btn" disabled=${pw.replace(/\s/g, '').length < 6}>Changer mon code PIN</button></div>
+      <small class="hint" style="margin:0">Lettres et chiffres, au moins 6. Note-le bien : c’est lui qui te permet d’entrer.</small></form>
     ${(me.role !== 'admin' || app.myHorseIds.length > 0) && html`<div class="card"><h3>📄 Mes données</h3><p class="muted small">Télécharge à tout moment ton dossier complet : coordonnées, fiche et carnet de santé de ${app.myHorseIds.length > 1 ? 'tes chevaux' : 'ton cheval'}, contrats, participations aux événements.</p>
       <button class="btn" onClick=${() => import('../pdf.js').then((m) => m.dossierPdf(app, me)).catch(fail)}><${Icon} n="download" size=${18} /> Télécharger mon dossier (PDF)</button></div>`}
     <div class="card"><button class="btn ghost" onClick=${app.logout}><${Icon} n="logout" size=${18} /> Se déconnecter</button>

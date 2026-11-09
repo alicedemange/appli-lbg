@@ -42,8 +42,8 @@ La sécurité est assurée côté serveur (règles « RLS » dans `supabase/sche
 1. Crée un compte sur [supabase.com](https://supabase.com) → **New project** (région : *West EU (Paris)* ou *Frankfurt*). Note le mot de passe de la base.
 2. Menu **SQL Editor** → **New query** → colle tout le contenu de `supabase/schema.sql` → **Run**.
 3. Nouvelle requête → colle le contenu de **`seed_lbg.sql`** (fichier fourni à part : il reprend les chevaux et l'historique du Google Sheet) → **Run**. Tout en bas du fichier figurent **les deux codes d'accès** de Nathalie et d'Alice.
-4. **Authentication › Sign In / Providers › Email** : désactive **« Confirm email »** (plus simple pour les cavaliers ; si tu le laisses activé, l'appli gère aussi ce cas).
-5. **Project Settings › API** : copie **Project URL** et la clé **anon public**.
+4. **Authentication › Sign In / Providers › Email** : désactive **« Confirm email »** (obligatoire : la connexion se fait par prénom + code PIN, sans e-mail).
+5. **Project Settings › API Keys** : copie l'**URL du projet** (`https://xxxx.supabase.co`, sans `/rest/v1/`) et la clé **publishable** (`sb_publishable_…`, anciennement « anon public »).
 
 ### 2. Configuration
 Ouvre `config.js` et colle les deux valeurs :
@@ -63,8 +63,8 @@ SUPABASE_ANON_KEY: 'eyJhbGciOi…',
 **Authentication › URL Configuration** : mets l'adresse GitHub Pages dans **Site URL** et dans **Redirect URLs** (sert au lien « mot de passe oublié »).
 
 ### 5. Première connexion
-- Nathalie et Alice : « 🔑 Première connexion ? J'ai un code » → code du `seed_lbg.sql` → e-mail + mot de passe.
-- Ensuite, dans **Membres & accès**, crée un code pour chaque propriétaire / DP / TP (en cochant ses chevaux) et envoie-lui le message tout prêt par WhatsApp ou SMS.
+- Nathalie et Alice : prénom + code PIN indiqués en bas de `seed_lbg.sql` (et dans `codes-pin-LBG.xlsx`).
+- Pour un nouveau cavalier : **Membres & accès › Créer un code PIN** (en cochant ses chevaux), puis envoie le message tout prêt par WhatsApp ou SMS.
 
 ### 6. Installer sur le téléphone
 - **iPhone** : ouvrir le lien dans Safari → bouton Partager → « Sur l'écran d'accueil ».
@@ -72,11 +72,12 @@ SUPABASE_ANON_KEY: 'eyJhbGciOi…',
 
 ---
 
-## Sécurité de la première connexion (code PIN)
-- Chaque personne reçoit un **code PIN à 6 caractères** créé par l'admin (Membres & accès › Créer un code PIN). Sans ce code, un compte reste « en attente » et ne voit **rien**.
-- Le code ne sert **qu'une fois** et **expire après 30 jours**.
-- Après **5 codes faux**, le compte est bloqué ; l'admin peut l'activer à la main (onglet Codes PIN › « Comptes créés sans code valide »).
-- Ensuite, chacun se connecte avec son e-mail et le mot de passe qu'il a choisi (« Mot de passe oublié » disponible).
+## Connexion : prénom + code PIN (pas d'e-mail, pas de mot de passe)
+- Chacun entre dans l'appli en tapant **son prénom de connexion** (ex. « Chloé », « Alice D ») et **son code PIN** (6 caractères). Accents et majuscules sans importance. Le téléphone reste connecté ensuite.
+- La 1re fois, le code PIN envoyé par l'écurie crée le compte automatiquement (rôle, chevaux, DP/TP et cours déjà rattachés). Il devient ensuite son code personnel, valable à chaque connexion.
+- Un code PIN jamais utilisé expire après 30 jours. Après 8 codes faux avec un même prénom, l'accès est bloqué (recrée un code).
+- **Code oublié** : Membres & accès › « 🔑 Nouveau PIN » → message prêt à envoyer. Chacun peut aussi changer son code dans « Mon profil ».
+- Techniquement, chaque compte Supabase a une adresse fictive `prénom@membres.ecurie-active-lbg.fr` : aucun e-mail n'est jamais envoyé. **« Confirm email » doit rester désactivé.**
 
 ## Quand quelqu'un quitte l'écurie
 - **Membres & accès › Archiver** : la personne perd l'accès, disparaît de l'annuaire et du planning, ses inscriptions futures sont retirées. Rien n'est supprimé (onglet « Anciens », réactivable).
@@ -101,8 +102,11 @@ Fiche du cheval › **Contrat & documents** › Ajouter : PDF ou photo, case « 
 - **Confidentialité** : les messages privés et de groupe ne sont lisibles que par les membres de la conversation, **pas même par l'admin**.
 - **Rétention** : tous les messages sont effacés au bout de **30 jours** (et ceux des événements 2 jours après l'événement). Les groupes restent, vides, prêts à resservir.
 
+## Repartir de zéro
+`supabase/reinitialiser.sql` efface toutes les données et tous les comptes de l'appli **sans supprimer le projet Supabase** (l'adresse et la clé ne changent pas). Lance-le, puis `schema.sql`, puis `seed_lbg.sql`.
+
 ## Mise à jour depuis la première version
-Si tu avais **déjà** lancé un ancien `schema.sql` dans Supabase, lance en plus, dans l'ordre, `supabase/migration_v2.sql` (contrats, archives, code PIN) puis `supabase/migration_v3.sql` (heure des RDV soins), puis `supabase/migration_v4.sql` (balades, discussions, liens photos), puis `supabase/migration_v5.sql` (messagerie privée et groupes), puis `supabase/migration_v6.sql` (codes PIN avec téléphone, DP/TP et cours pré-remplis — nécessaire pour le `seed_lbg.sql` des vraies données), puis `supabase/migration_v7.sql` (vaccins réservés à l'admin). Pour une première installation, `schema.sql` suffit.
+Si tu avais **déjà** lancé un ancien `schema.sql` dans Supabase, lance en plus, dans l'ordre, `supabase/migration_v2.sql` (contrats, archives, code PIN) puis `supabase/migration_v3.sql` (heure des RDV soins), puis `supabase/migration_v4.sql` (balades, discussions, liens photos), puis `supabase/migration_v5.sql` (messagerie privée et groupes), puis `supabase/migration_v6.sql` (codes PIN avec téléphone, DP/TP et cours pré-remplis — nécessaire pour le `seed_lbg.sql` des vraies données), puis `supabase/migration_v7.sql` (vaccins réservés à l'admin), puis `supabase/migration_v8.sql` (connexion prénom + code PIN). Pour une première installation, `schema.sql` suffit.
 
 ## Personnaliser
 - **Couleurs** : en haut de `css/style.css` (variables `--navy`, `--brown`, `--sand`…).

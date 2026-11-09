@@ -624,3 +624,4 @@ a.chat-row { color: var(--ink); }
   .bigcal { display: none; } .cal-agenda { display: flex; }
   .lot-row { grid-template-columns: 22px 1fr auto 30px; } .lot-row .lr-last { display: none; } .lot-row .badge { grid-column: 2 / 4; justify-self: start; }
 }
+.pin-wrap { display: flex; gap: 6px; align-items: center; } .pin-wrap input { flex: 1; }

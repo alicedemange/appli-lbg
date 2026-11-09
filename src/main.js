@@ -1,5 +1,5 @@
 import { html, render, useState, useEffect, useMemo } from './lib.js';
-import { db, auth, DEMO, initDb, purgeChats } from './db.js';
+import { db, auth, DEMO, DEMO_PIN, initDb, purgeChats } from './db.js';
 import { AppCtx, ModalHost, Toasts, Icon, Avatar, Logo, FullLogo, Badge, openModal, toast, fail, useForm, Field, Loading } from './ui.js';
 import { ROLES, cls, isActive } from './util.js';
 import { CONFIG } from '../config.js';
@@ -35,7 +35,6 @@ function useRoute() {
 function App() {
   const [me, setMe] = useState(undefined);
   const [base, setBase] = useState(null);
-  const [recovery, setRecovery] = useState(false);
   const route = useRoute();
 
   const loadMe = async () => { try { setMe(await auth.current()); } catch (e) { fail(e); setMe(null); } };
@@ -45,7 +44,7 @@ function App() {
     ]);
     setBase({ profiles, horses, riders, contacts });
   };
-  useEffect(() => { initDb().then(loadMe).catch((e) => { fail(e); setMe(null); }); auth.onChange((ev) => { if (ev === 'PASSWORD_RECOVERY') setRecovery(true); if (ev === 'SIGNED_OUT') { setMe(null); setBase(null); } }); }, []);
+  useEffect(() => { initDb().then(loadMe).catch((e) => { fail(e); setMe(null); }); auth.onChange((ev) => { if (ev === 'SIGNED_OUT') { setMe(null); setBase(null); } }); }, []);
   useEffect(() => { if (isActive(me)) { reloadBase().catch(fail); purgeChats().catch(() => {}); } }, [me?.id, me?.role]);
 
   const ctx = useMemo(() => {
@@ -69,7 +68,6 @@ function App() {
   }, [me, base]);
 
   if (me === undefined) return html`<div class="boot"><${FullLogo} width=${220} /><${Loading} /></div>`;
-  if (recovery) return html`<${NewPassword} done=${() => { setRecovery(false); loadMe(); }} />`;
   if (!me) return html`<${Login} onDone=${loadMe} />`;
   if (me.role === 'archive') return html`<${Archived} />`;
   if (!isActive(me)) return html`<${ClaimCode} me=${me} onDone=${loadMe} />`;
@@ -137,60 +135,23 @@ function AuthFrame({ children }) {
   return html`<div class="auth"><div class="auth-card"><div class="auth-brand"><${FullLogo} width=${280} /><p>L’appli de l’écurie</p></div>${children}</div></div>`;
 }
 function Login({ onDone }) {
-  const [mode, setMode] = useState('login');
-  if (DEMO) {
-    const ps = auth.demoProfiles(); const go = (n) => { const p = ps.find((x) => x.full_name === n); auth.demoLogin(p.id); onDone(); };
-    return html`<${AuthFrame}><p class="center">Mode démo : choisis un espace pour visiter l’appli.</p>
-      <div class="demo-pick">
-        <button onClick=${() => go('Alice')}><span>🔑</span><b>Espace admin</b><small>Alice — gestion complète, registre, codes d’accès</small></button>
-        <button onClick=${() => go('Chloé')}><span>🐴</span><b>Espace propriétaire</b><small>Chloé — ses chevaux Paradino & Timy, carnet de santé</small></button>
-        <button onClick=${() => go('Lyna')}><span>🏇</span><b>Espace DP / TP</b><small>Lyna — tiers de pension de Montana, cours, monte libre</small></button>
-      </div></${AuthFrame}>`;
-  }
+  const f = useForm({ name: '', pin: '' }); const [busy, setBusy] = useState(false); const [show, setShow] = useState(false);
+  const go = async (e) => { e.preventDefault(); setBusy(true); try { await auth.pinLogin(f.v.name, f.v.pin); onDone(); } catch (er) { fail(er); } setBusy(false); };
+  const quick = (n) => { const p = auth.demoProfiles().find((x) => x.full_name === n); auth.demoLogin(p.id); onDone(); };
   return html`<${AuthFrame}>
-    ${mode === 'login' && html`<${LoginForm} onDone=${onDone} setMode=${setMode} />`}
-    ${mode === 'code' && html`<${SignupForm} onDone=${onDone} setMode=${setMode} />`}
-    ${mode === 'reset' && html`<${ResetForm} setMode=${setMode} />`}
+    <form class="form" onSubmit=${go}>
+      <${Field} label="Ton prénom"><input required autocomplete="username" autocapitalize="words" placeholder="Ex. Chloé" ...${f.bind('name')} /></${Field}>
+      <${Field} label="Ton code PIN">
+        <div class="pin-wrap"><input class="code-in" required minlength="6" maxlength="12" type=${show ? 'text' : 'password'} autocomplete="current-password" autocapitalize="characters" placeholder="••••••" ...${f.bind('pin')} />
+          <button type="button" class="icon-btn" aria-label=${show ? 'Masquer le code' : 'Afficher le code'} onClick=${() => setShow(!show)}>${show ? '🙈' : '👁️'}</button></div></${Field}>
+      <button class="btn primary big" disabled=${busy}>${busy ? 'Connexion…' : 'Entrer'}</button>
+      <p class="hint center" style="margin:0">Ton prénom et ton code PIN t’ont été envoyés par l’écurie.<br />Code oublié ? Demande-en un nouveau à Nathalie.</p>
+    </form>
+    ${DEMO && html`<div class="demo-pick"><p class="center small muted" style="margin:14px 0 0">Mode démo : prénom de ton choix (ex. « Chloé ») + code <b>${DEMO_PIN}</b>, ou visite directement :</p>
+      <button onClick=${() => quick('Alice')}><span>🔑</span><b>Espace admin</b><small>Alice — gestion complète, registre, codes PIN</small></button>
+      <button onClick=${() => quick('Chloé')}><span>🐴</span><b>Espace propriétaire</b><small>Chloé — Paradino & Timy, carnet de santé</small></button>
+      <button onClick=${() => quick('Lyna')}><span>🏇</span><b>Espace DP / TP</b><small>Lyna — tiers de pension de Montana</small></button></div>`}
   </${AuthFrame}>`;
-}
-function LoginForm({ onDone, setMode }) {
-  const f = useForm({ email: '', password: '' }); const [busy, setBusy] = useState(false);
-  const go = async (e) => { e.preventDefault(); setBusy(true); try { await auth.signIn(f.v.email, f.v.password); onDone(); } catch (er) { fail(er); } setBusy(false); };
-  return html`<form class="form" onSubmit=${go}>
-    <${Field} label="E-mail"><input type="email" autocomplete="email" required ...${f.bind('email')} /></${Field}>
-    <${Field} label="Mot de passe"><input type="password" autocomplete="current-password" required ...${f.bind('password')} /></${Field}>
-    <button class="btn primary big" disabled=${busy}>${busy ? 'Connexion…' : 'Se connecter'}</button>
-    <button type="button" class="btn ghost big" onClick=${() => setMode('code')}>🔑 Première connexion ? J’ai un code PIN</button>
-    <button type="button" class="linkbtn" onClick=${() => setMode('reset')}>Mot de passe oublié</button>
-  </form>`;
-}
-const PIN_HELP = 'Le code PIN à 6 caractères que Nathalie t’a envoyé (lettres et chiffres). Il ne sert qu’une fois.';
-function SignupForm({ onDone, setMode }) {
-  const f = useForm({ code: '', full_name: '', email: '', password: '', phone: '' });
-  const [busy, setBusy] = useState(false); const [sent, setSent] = useState(false);
-  const create = async (e) => {
-    e.preventDefault(); setBusy(true);
-    try { const r = await auth.signUp(f.v); if (r === 'confirm') setSent(true); else { if (r !== 'ok') toast(r, 'err'); onDone(); } } catch (er) { fail(er); }
-    setBusy(false);
-  };
-  if (sent) return html`<div class="center"><p>📬 Presque fini ! Clique sur le lien reçu par e-mail, puis reviens te connecter : ton code PIN te sera redemandé une dernière fois.</p><button class="btn" onClick=${() => setMode('login')}>Retour</button></div>`;
-  return html`<form class="form" onSubmit=${create}>
-    <div class="pin-box"><span class="lbl">🔑 Ton code PIN d’accès</span>
-      <input class="code-in" required minlength="6" maxlength="6" autocomplete="one-time-code" autocapitalize="characters" placeholder="••••••" ...${f.bind('code')} />
-      <small class="hint">${PIN_HELP}</small></div>
-    <${Field} label="Prénom / nom"><input required ...${f.bind('full_name')} /></${Field}>
-    <${Field} label="E-mail"><input type="email" required autocomplete="email" ...${f.bind('email')} /></${Field}>
-    <${Field} label="Choisis un mot de passe (6 caractères min.)"><input type="password" minlength="6" required autocomplete="new-password" ...${f.bind('password')} /></${Field}>
-    <${Field} label="Téléphone (pour l’annuaire)"><input type="tel" ...${f.bind('phone')} /></${Field}>
-    <button class="btn primary big" disabled=${busy}>${busy ? 'Vérification…' : 'Créer mon compte'}</button>
-    <button type="button" class="linkbtn" onClick=${() => setMode('login')}>J’ai déjà un compte</button></form>`;
-}
-function ResetForm({ setMode }) {
-  const [email, setEmail] = useState(''); const [ok, setOk] = useState(false);
-  if (ok) return html`<div class="center"><p>📬 Si un compte existe, un e-mail vient de partir avec un lien pour choisir un nouveau mot de passe.</p><button class="btn" onClick=${() => setMode('login')}>Retour</button></div>`;
-  return html`<form class="form" onSubmit=${async (e) => { e.preventDefault(); try { await auth.resetPassword(email); setOk(true); } catch (er) { fail(er); } }}>
-    <${Field} label="Ton e-mail"><input type="email" required value=${email} onInput=${(e) => setEmail(e.target.value)} /></${Field}>
-    <button class="btn primary big">Recevoir un lien</button><button type="button" class="linkbtn" onClick=${() => setMode('login')}>Retour</button></form>`;
 }
 function ClaimCode({ me, onDone }) {
   const f = useForm({ code: '', full_name: me.full_name || '', phone: me.phone || '' });
@@ -214,13 +175,6 @@ function Archived() {
     <p>Merci pour tous ces bons moments 🐴</p>
     <button class="btn" onClick=${async () => { await auth.signOut(); location.reload(); }}>Se déconnecter</button></div></${AuthFrame}>`;
 }
-function NewPassword({ done }) {
-  const [pw, setPw] = useState('');
-  return html`<${AuthFrame}><form class="form" onSubmit=${async (e) => { e.preventDefault(); try { await auth.updatePassword(pw); toast('Mot de passe enregistré'); done(); } catch (er) { fail(er); } }}>
-    <${Field} label="Nouveau mot de passe"><input type="password" minlength="6" required value=${pw} onInput=${(e) => setPw(e.target.value)} /></${Field}>
-    <button class="btn primary big">Enregistrer</button></form></${AuthFrame}>`;
-}
-
 function Root() { return html`<${App} /><${Toasts} />`; }
 document.title = 'LBG — ' + CONFIG.NOM_ECURIE;
 render(html`<${Root} />`, document.getElementById('app'));
