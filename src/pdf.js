@@ -75,7 +75,7 @@ async function horseSection(d, app, h, evts, docs) {
   d.kv([['Propriétaire', app.ownerName(h)], ['Sexe', SEXES[h.sex]], ['Né(e) le', h.birth_date && fmtDate(h.birth_date)], ['Race', h.breed], ['Robe', h.robe], ['Taille', h.height && h.height + ' cm'],
     ['UELN', h.ueln], ['N° SIRE', h.sire], ['Transpondeur', h.transponder], ['Formule', PENSIONS[h.pension]], ['Arrivé(e) le', h.arrival_date && fmtDate(h.arrival_date)], ['Provenance', h.origin],
     ['Sorti(e) le', h.departure_date && fmtDate(h.departure_date)], ['Destination', h.destination]]);
-  if (h.ration_morning || h.ration_evening || h.supplements) { d.h2('Ration'); d.p(`Matin : ${h.ration_morning || '-'}\nSoir : ${h.ration_evening || '-'}${h.supplements ? '\nCompléments : ' + h.supplements : ''}`); }
+  if (h.supplements || h.treatment) { d.h2('Compléments & traitements'); d.p(`Compléments : ${h.supplements || '-'}${h.treatment ? '\nTraitement : ' + h.treatment + (h.treatment_until ? ' (jusqu’au ' + h.treatment_until.split('-').reverse().join('/') + ')' : '') : ''}`); }
   if (h.notes) { d.h2('À savoir'); d.p(h.notes); }
   d.h2('Carnet de santé');
   d.table([{ h: 'Date', w: 20 }, { h: 'Soin', w: 22 }, { h: 'Intervenant', w: 26 }, { h: 'Produit / lot', w: 34 }, { h: 'Observations', w: 60 }],

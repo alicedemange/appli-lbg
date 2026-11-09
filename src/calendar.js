@@ -3,6 +3,7 @@ import { html } from './lib.js';
 import { Modal, openModal, Icon, toast } from './ui.js';
 import { addDays, fmtDate, fmtTime, downloadText } from './util.js';
 import { CONFIG } from '../config.js';
+import { publishIcs } from './db.js';
 
 const LIEU = 'Écuries la Barthe Grande';
 const stamp = (date, time) => date.replace(/-/g, '') + (time ? 'T' + time.slice(0, 5).replace(':', '') + '00' : '');
@@ -44,7 +45,12 @@ export async function saveIcs(ev) {
   const ics = buildIcs(ev);
   const name = (ev.title || 'rdv').normalize('NFD').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 40) + '.ics';
   if (window.claude?.use) { toast('Aperçu Claude : le fichier agenda fonctionnera dans la vraie appli (ici, utilise Google Agenda)', 'err'); return false; }
-  if (isIOS()) { location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics); return; }
+  if (isIOS()) {
+    // Safari iPhone n'ouvre pas les fichiers téléchargés : on passe par une vraie adresse .ics,
+    // qu'iOS ouvre directement avec « Ajouter au calendrier ».
+    try { const url = await publishIcs(ics); if (url) { location.href = url; return; } } catch (e) { console.warn(e); }
+    location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics); return;
+  }
   await downloadText(name, ics, 'text/calendar', false);
 }
 
@@ -59,7 +65,7 @@ export function offerCalendar(ev, { auto = false, intro } = {}) {
     ${intro && html`<p><b>${intro}</b></p>`}
     <div class="cal-card"><b>${ev.title}</b><span>${fmtDate(ev.date, 'long')}${ev.start ? ' · ' + fmtTime(ev.start) + (ev.end ? ' – ' + fmtTime(ev.end) : '') : ' · toute la journée'}</span>${ev.location && html`<span>📍 ${ev.location}</span>`}</div>
     <div class="cal-btns">
-      <button class="btn primary big" onClick=${async () => { if ((await saveIcs(ev)) !== false) { close(); toast('Ouvre le fichier pour l’ajouter à ton agenda 📅'); } }}><span class="emo">📱</span> iPhone, Android, Outlook</button>
+      <button class="btn primary big" onClick=${async () => { if ((await saveIcs(ev)) !== false) { close(); toast(isIOS() ? 'Touche « Ajouter » pour l’enregistrer dans ton calendrier 📅' : 'Ouvre le fichier pour l’ajouter à ton agenda 📅'); } }}><span class="emo">📱</span> ${isIOS() ? 'Calendrier de l’iPhone' : 'Agenda du téléphone / Outlook'}</button>
       <a class="btn big" href=${googleUrl(ev)} target="_blank" rel="noopener" onClick=${() => setTimeout(close, 300)}><span class="emo">🗓️</span> Google Agenda</a>
     </div>
     <p class="hint">Un rappel est réglé 1 h avant (la veille au soir pour un RDV sur la journée).</p>

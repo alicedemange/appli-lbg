@@ -18,7 +18,7 @@ const NAV = [
   ['idees', 'Boîte à idées', 'idea'],
   ['annuaire', 'Annuaire', 'book'],
   ['infos', 'Infos pratiques', 'info'],
-  ['rations', 'Rations', 'bowl'],
+  ['rations', 'Compléments & traitements', 'bowl'],
   ['registre', 'Registre d’élevage', 'clipboard', 'admin'],
   ['historique', 'Historique & exports', 'clock', 'admin'],
   ['membres', 'Membres & accès', 'key', 'admin'],

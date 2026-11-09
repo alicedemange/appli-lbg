@@ -105,6 +105,16 @@ export async function uploadPhoto(horseId, dataUrl) {
   return sb.storage.from('photos').getPublicUrl(path).data.publicUrl + '?v=' + Date.now();
 }
 
+/** iPhone : publie le fichier agenda (.ics) et renvoie son adresse — Safari propose alors « Ajouter au calendrier ». */
+export async function publishIcs(text) {
+  if (DEMO || !sb) return null;
+  const path = `agenda/${uuid()}.ics`;
+  const blob = new Blob([text], { type: 'text/calendar' });
+  const { error } = await sb.storage.from('photos').upload(path, blob, { contentType: 'text/calendar; charset=utf-8', upsert: true });
+  if (error) throw tr(error);
+  return sb.storage.from('photos').getPublicUrl(path).data.publicUrl;
+}
+
 // ── Messagerie : discussions d'événements + conversations privées / groupes ──
 export const MSG_DAYS = 30; // les messages s'effacent après 30 jours
 const T = (kind) => (kind === 'event' ? { table: 'event_messages', col: 'event_id' } : { table: 'messages', col: 'conversation_id' });
