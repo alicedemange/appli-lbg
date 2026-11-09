@@ -6,9 +6,12 @@ import { buildDemoData } from './demo.js';
 export const DEMO = !CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY;
 let sb = null;
 
+export let INIT_ERROR = null;
 export async function initDb() {
   if (DEMO) return;
-  const { createClient } = await import('@supabase/supabase-js');
+  let createClient;
+  try { ({ createClient } = await import('@supabase/supabase-js')); }
+  catch (e) { INIT_ERROR = 'Impossible de charger la bibliothèque Supabase (connexion Internet ou bloqueur de contenu ?). Détail : ' + (e?.message || e); throw new Error(INIT_ERROR); }
   sb = createClient(CONFIG.SUPABASE_URL.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, ''), CONFIG.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
 }
 
@@ -211,6 +214,7 @@ export const loginSlug = (s = '') => s.normalize('NFD').replace(/[̀-ͯ]/g, '').
 const loginEmail = (slug) => `${slug}@${CONFIG.LOGIN_DOMAIN || 'membres.ecurie-active-lbg.fr'}`;
 const cleanPin = (pin = '') => pin.replace(/\s+/g, '').toUpperCase();
 const BAD = 'Prénom ou code PIN incorrect.';
+const withTimeout = (p, ms = 20000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Le serveur Supabase ne répond pas (20 s). Vérifie ta connexion Internet, puis réessaie.')), ms))]);
 export const DEMO_PIN = 'LBG123';
 
 export const auth = {
@@ -230,7 +234,7 @@ export const auth = {
    * Connexion avec le prénom (identifiant) et le code PIN.
    * 1re fois : le code PIN donné par l'écurie crée le compte automatiquement.
    */
-  async pinLogin(name, pin) {
+  async pinLogin(name, pin, step = () => {}) {
     const slug = loginSlug(name); const code = cleanPin(pin);
     if (!slug || code.length < 6) throw new Error(BAD);
     if (DEMO) {
@@ -238,19 +242,24 @@ export const auth = {
       if (!p || code !== DEMO_PIN) throw new Error(`${BAD} (Démo : un prénom de l’écurie, ex. « Chloé », et le code ${DEMO_PIN})`);
       auth.demoLogin(p.id); return;
     }
+    if (!sb) throw new Error(INIT_ERROR || 'Connexion à Supabase impossible : vérifie l’adresse et la clé dans config.js.');
     const email = loginEmail(slug);
-    const first = await sb.auth.signInWithPassword({ email, password: code });
+    step('Vérification de ton code PIN…');
+    const first = await withTimeout(sb.auth.signInWithPassword({ email, password: code }));
     if (!first.error) return;
     if (!/invalid login credentials/i.test(first.error.message)) throw tr(first.error);
     // Première connexion ? On vérifie le code PIN d'accès avant de créer le compte.
-    const { data: ok, error: e1 } = await sb.rpc('check_first_login', { p_login: slug, p_code: code });
+    step('Première connexion : vérification du code PIN…');
+    const { data: ok, error: e1 } = await withTimeout(sb.rpc('check_first_login', { p_login: slug, p_code: code }));
     if (e1) throw tr(e1);
     if (ok === 'bloque') throw new Error('Trop d’essais avec ce prénom : demande un nouveau code PIN à Nathalie.');
     if (ok !== 'ok') throw new Error(BAD);
-    const { data, error } = await sb.auth.signUp({ email, password: code, options: { data: { full_name: name.trim() } } });
+    step('Création de ton accès…');
+    const { data, error } = await withTimeout(sb.auth.signUp({ email, password: code, options: { data: { full_name: name.trim() } } }));
     if (error) throw tr(error);
     if (!data.session) throw new Error('Réglage Supabase à faire : désactive « Confirm email » (Authentication › Sign In / Providers › Email).');
-    const r = await auth.claim(code);
+    step('Préparation de ton espace (chevaux, cours…)…');
+    const r = await withTimeout(auth.claim(code));
     if (r !== 'ok') throw new Error(r);
   },
   /** Relie le compte à l'écurie avec le code PIN : renvoie 'ok' ou un message d'erreur. */

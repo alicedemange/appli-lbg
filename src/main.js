@@ -1,5 +1,5 @@
 import { html, render, useState, useEffect, useMemo } from './lib.js';
-import { db, auth, DEMO, DEMO_PIN, initDb, purgeChats } from './db.js';
+import { db, auth, DEMO, DEMO_PIN, INIT_ERROR, initDb, purgeChats } from './db.js';
 import { AppCtx, ModalHost, Toasts, Icon, Avatar, Logo, FullLogo, Badge, openModal, toast, fail, useForm, Field, Loading } from './ui.js';
 import { ROLES, cls, isActive } from './util.js';
 import { CONFIG } from '../config.js';
@@ -37,7 +37,7 @@ function App() {
   const [base, setBase] = useState(null);
   const route = useRoute();
 
-  const loadMe = async () => { try { setMe(await auth.current()); } catch (e) { fail(e); setMe(null); } };
+  const loadMe = async () => { try { setMe(await auth.current()); } catch (e) { fail(e); setMe(null); throw e; } };
   const reloadBase = async () => {
     const [profiles, horses, riders, contacts] = await Promise.all([
       db.select('profiles', { order: 'full_name' }), db.select('horses', { order: 'name' }), db.select('horse_riders'), db.select('contacts', { order: 'name' }),
@@ -136,7 +136,13 @@ function AuthFrame({ children }) {
 }
 function Login({ onDone }) {
   const f = useForm({ name: '', pin: '' }); const [busy, setBusy] = useState(false); const [show, setShow] = useState(false);
-  const go = async (e) => { e.preventDefault(); setBusy(true); try { await auth.pinLogin(f.v.name, f.v.pin); onDone(); } catch (er) { fail(er); } setBusy(false); };
+  const [err, setErr] = useState(INIT_ERROR || ''); const [step, setStep] = useState('');
+  const go = async (e) => {
+    e.preventDefault(); setBusy(true); setErr(''); setStep('Connexion…');
+    try { await auth.pinLogin(f.v.name, f.v.pin, setStep); setStep('C’est bon, ouverture…'); await onDone(); }
+    catch (er) { console.error(er); setErr(er?.message || String(er)); }
+    setBusy(false); setStep('');
+  };
   const quick = (n) => { const p = auth.demoProfiles().find((x) => x.full_name === n); auth.demoLogin(p.id); onDone(); };
   return html`<${AuthFrame}>
     <form class="form" onSubmit=${go}>
@@ -144,7 +150,8 @@ function Login({ onDone }) {
       <${Field} label="Ton code PIN">
         <div class="pin-wrap"><input class="code-in" required minlength="6" maxlength="12" type=${show ? 'text' : 'password'} autocomplete="current-password" autocapitalize="characters" placeholder="••••••" ...${f.bind('pin')} />
           <button type="button" class="icon-btn" aria-label=${show ? 'Masquer le code' : 'Afficher le code'} onClick=${() => setShow(!show)}>${show ? '🙈' : '👁️'}</button></div></${Field}>
-      <button class="btn primary big" disabled=${busy}>${busy ? 'Connexion…' : 'Entrer'}</button>
+      <button class="btn primary big" disabled=${busy}>${busy ? (step || 'Connexion…') : 'Entrer'}</button>
+      ${err && html`<div class="login-err" role="alert">⚠️ ${err}</div>`}
       <p class="hint center" style="margin:0">Ton prénom et ton code PIN t’ont été envoyés par l’écurie.<br />Code oublié ? Demande-en un nouveau à Nathalie.</p>
     </form>
     ${DEMO && html`<div class="demo-pick"><p class="center small muted" style="margin:14px 0 0">Mode démo : prénom de ton choix (ex. « Chloé ») + code <b>${DEMO_PIN}</b>, ou visite directement :</p>
