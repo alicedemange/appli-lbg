@@ -92,7 +92,7 @@ export function HorseDetail({ id }) {
         ${s.next && html`<small>${s.planned ? 'RDV ' : 'Prochain '}${fmtDate(s.next)}</small>`}</button>`;
     })}</div>`}
 
-    <${Tabs} value=${tab} onChange=${setTab} tabs=${[...(see ? [['sante', '🩺 Carnet de santé']] : []), ['fiche', '🪪 Identité'], ['ration', '🥕 Ration'], ...(can ? [['docs', '📄 Contrat & documents'], ['cavaliers', '🏇 DP / TP']] : [])]} />
+    <${Tabs} value=${tab} onChange=${setTab} tabs=${[...(see ? [['sante', '🩺 Carnet de santé']] : []), ['fiche', '🪪 Identité'], ['ration', '💊 Compléments & traitements'], ...(can ? [['docs', '📄 Contrat & documents'], ['cavaliers', '🏇 DP / TP']] : [])]} />
 
     ${tab === 'sante' && see && html`<div class="card">
       <div class="card-h"><div class="filter-chips">
@@ -137,13 +137,15 @@ function HealthItem({ e, reload }) {
 
 function RationCard({ h, can }) {
   const app = useApp();
-  const f = useForm({ ration_morning: h.ration_morning || '', ration_evening: h.ration_evening || '', supplements: h.supplements || '' });
-  const save = async (e) => { e.preventDefault(); try { await db.update('horses', h.id, f.v); await app.reloadBase(); toast('Ration enregistrée 🥕'); } catch (er) { fail(er); } };
+  const f = useForm({ supplements: h.supplements || '', treatment: h.treatment || '', treatment_until: h.treatment_until || '' });
+  const save = async (e) => { e.preventDefault(); try { await db.update('horses', h.id, { ...f.v, treatment_until: f.v.treatment_until || null }); await app.reloadBase(); toast('Enregistré 💊'); } catch (er) { fail(er); } };
   return html`<form class="card form" onSubmit=${save}>
-    <div class="ration-grid">
-      <${Field} label="☀️ Matin"><textarea rows="3" disabled=${!can} ...${f.bind('ration_morning')}></textarea></${Field}>
-      <${Field} label="🌙 Soir"><textarea rows="3" disabled=${!can} ...${f.bind('ration_evening')}></textarea></${Field}>
-      <${Field} label="➕ Compléments / remarques"><textarea rows="3" disabled=${!can} ...${f.bind('supplements')}></textarea></${Field}>
+    <div class="ration-grid two">
+      <${Field} label="🌿 Compléments alimentaires" hint="Nom, dose, matin ou soir"><textarea rows="4" disabled=${!can} placeholder="Ex. : Complément articulations, 1 dose le soir" ...${f.bind('supplements')}></textarea></${Field}>
+      <div>
+        <${Field} label="💊 Traitement en cours" hint="Médicament, dose, moment, prescrit par…"><textarea rows="4" disabled=${!can} placeholder="Ex. : Equipalazone, 1 sachet matin et soir (véto)" ...${f.bind('treatment')}></textarea></${Field}>
+        <${Field} label="Jusqu’au"><input type="date" disabled=${!can} ...${f.bind('treatment_until')} /></${Field}>
+      </div>
     </div>
     ${can && html`<div class="right"><button class="btn primary">Enregistrer</button></div>`}
   </form>`;
@@ -411,17 +413,26 @@ function DayModal({ day, entries, close, reload }) {
   </${Modal}>`;
 }
 
-// ═════════════════════ RATIONS ═════════════════════
+// ═════════════════════ COMPLÉMENTS & TRAITEMENTS ═════════════════════
+const trtActive = (h) => !!h.treatment && (!h.treatment_until || h.treatment_until >= todayISO());
 export function Rations() {
-  const app = useApp(); const horses = app.horses.filter((h) => !h.departure_date);
+  const app = useApp(); const [all, setAll] = useState(false);
+  const horses = app.horses.filter((h) => !h.departure_date);
+  const shown = all ? horses : horses.filter((h) => h.supplements || trtActive(h));
+  const nTrt = horses.filter(trtActive).length;
   return html`<section class="page">
-    <${PageHead} title="Rations" sub="La fiche de la sellerie / salle d’alimentation. Chaque propriétaire met à jour la ration de son cheval depuis sa fiche.">
+    <${PageHead} title="Compléments & traitements" sub="La fiche de la salle d’alimentation. Chaque propriétaire met à jour son cheval depuis sa fiche, onglet 💊.">
       <button class="btn ghost" onClick=${() => print()}><${Icon} n="printer" size=${18} /> Imprimer</button>
     </${PageHead}>
-    <div class="card scroll-x"><table class="table rations">
-      <thead><tr><th>Cheval</th><th>☀️ Matin</th><th>🌙 Soir</th><th>➕ Compléments</th></tr></thead>
-      <tbody>${horses.map((h) => html`<tr><th><a href=${'#cheval-' + h.id}>${h.name}</a><small>${app.ownerName(h)}</small></th><td>${h.ration_morning || '—'}</td><td>${h.ration_evening || '—'}</td><td>${h.supplements || ''}</td></tr>`)}</tbody>
-    </table></div></section>`;
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-bottom:12px">
+      <span class="badge" style="--c:#c2453d">💊 ${nTrt} traitement${nTrt > 1 ? 's' : ''} en cours</span>
+      <label class="check small"><input type="checkbox" checked=${all} onChange=${(e) => setAll(e.target.checked)} /> Afficher tous les chevaux</label>
+    </div>
+    ${!shown.length ? html`<div class="card" style="text-align:center;padding:30px;color:var(--muted)">Aucun complément ni traitement en cours 🎉</div>` : html`<div class="card scroll-x"><table class="table rations">
+      <thead><tr><th>Cheval</th><th>🌿 Compléments</th><th>💊 Traitement en cours</th><th>Jusqu’au</th></tr></thead>
+      <tbody>${shown.map((h) => { const on = trtActive(h); return html`<tr class=${on ? 'trt-on' : ''}><th><a href=${'#cheval-' + h.id}>${h.name}</a><small>${app.ownerName(h)}</small></th>
+        <td data-l="🌿 Compléments">${h.supplements || '—'}</td><td data-l="💊 Traitement">${on ? h.treatment : '—'}</td><td data-l="Jusqu’au">${on && h.treatment_until ? fmtDate(h.treatment_until, 'dm') : on ? 'à suivre' : ''}</td></tr>`; })}</tbody>
+    </table></div>`}</section>`;
 }
 
 // ═════════════════════ ARCHIVER UN CHEVAL ═════════════════════
