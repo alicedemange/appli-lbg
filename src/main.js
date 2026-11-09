@@ -38,6 +38,7 @@ function App() {
   const route = useRoute();
 
   const [bootErr, setBootErr] = useState('');
+  useEffect(() => { const f = (e) => setBootErr('Erreur : ' + (e?.reason?.message || e?.message || e?.reason || e)); addEventListener('error', f); addEventListener('unhandledrejection', f); return () => { removeEventListener('error', f); removeEventListener('unhandledrejection', f); }; }, []);
   const loadMe = async () => { try { setMe(await timed('Lecture de ton profil', auth.current())); } catch (e) { setBootErr(e.message); fail(e); setMe(null); throw e; } };
   const reloadBase = async () => {
     const [profiles, horses, riders, contacts] = await Promise.all([
@@ -46,7 +47,11 @@ function App() {
     ]);
     setBase({ profiles, horses, riders, contacts }); setBootErr('');
   };
-  useEffect(() => { initDb().then(loadMe).catch((e) => { fail(e); setMe(null); }); auth.onChange((ev) => { if (ev === 'SIGNED_OUT') { setMe(null); setBase(null); } }); }, []);
+  useEffect(() => {
+    timed('Chargement de la bibliothèque Supabase', initDb())
+      .then(() => { try { auth.onChange((ev) => { if (ev === 'SIGNED_OUT') { setMe(null); setBase(null); } }); } catch (e) { console.error(e); } return loadMe(); })
+      .catch((e) => { console.error(e); setBootErr(e.message); });
+  }, []);
   useEffect(() => { if (isActive(me)) { reloadBase().catch((e) => { console.error(e); setBootErr(e.message); }); purgeChats().catch(() => {}); } }, [me?.id, me?.role]);
 
   const ctx = useMemo(() => {
@@ -98,17 +103,20 @@ function App() {
   return html`<${AppCtx.Provider} value=${ctx}><${Shell} route=${name === 'cheval' ? 'chevaux' : name}>${page}</${Shell}><${ModalHost} /></${AppCtx.Provider}>`;
 }
 
-const timed = (label, p, ms = 20000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(label + ' : le serveur ne répond pas (20 s)')), ms))])
+let bootStep = '';
+const timed = (label, p, ms = 20000) => { bootStep = label; return timedRace(label, p, ms); };
+const timedRace = (label, p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(label + ' : le serveur ne répond pas (20 s)')), ms))])
   .catch((e) => { throw e?.message?.startsWith(label) ? e : new Error(label + ' : ' + (e?.message || e)); });
 
 /** Écran de chargement qui ne tourne jamais dans le vide : message d'erreur + boutons. */
 function Boot({ err }) {
-  const [slow, setSlow] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setSlow(true), 8000); return () => clearTimeout(t); }, []);
+  const [sec, setSec] = useState(0);
+  useEffect(() => { const t = setInterval(() => setSec((x) => x + 1), 1000); return () => clearInterval(t); }, []);
+  const slow = sec >= 8;
   return html`<div class="boot"><${FullLogo} width=${220} />
     ${!err && html`<${Loading} />`}
     ${(err || slow) && html`<div class="boot-help">
-      ${err ? html`<div class="login-err" role="alert">⚠️ ${err}</div>` : html`<p>Le chargement prend plus de temps que prévu…</p>`}
+      ${err ? html`<div class="login-err" role="alert">⚠️ ${err}</div>` : html`<p>Le chargement prend plus de temps que prévu… (${sec} s)<br /><small class="muted">Étape en cours : ${bootStep || 'démarrage'}</small></p>`}
       <div class="boot-btns"><button class="btn primary" onClick=${() => location.reload()}>Réessayer</button>
         <button class="btn ghost" onClick=${async () => { try { await auth.signOut(); } catch (e) {} location.reload(); }}>Se déconnecter</button></div>
       <small class="muted">Fais une capture de cet écran pour l’envoyer si ça continue.</small></div>`}

@@ -12,7 +12,7 @@ export async function initDb() {
   let createClient;
   try { ({ createClient } = await import('@supabase/supabase-js')); }
   catch (e) { INIT_ERROR = 'Impossible de charger la bibliothèque Supabase (connexion Internet ou bloqueur de contenu ?). Détail : ' + (e?.message || e); throw new Error(INIT_ERROR); }
-  sb = createClient(CONFIG.SUPABASE_URL.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, ''), CONFIG.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+  sb = createClient(CONFIG.SUPABASE_URL.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, ''), CONFIG.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, lock: async (_name, _timeout, fn) => await fn() } });
 }
 
 // ── Mode démo : base en mémoire + localStorage ───────────────
@@ -288,5 +288,5 @@ export const auth = {
     if (DEMO) { demoUser = null; try { localStorage.removeItem('lbg-demo-user'); } catch (e) {} return; }
     await sb.auth.signOut();
   },
-  onChange(cb) { if (!DEMO) sb.auth.onAuthStateChange((ev) => cb(ev)); },
+  onChange(cb) { if (!DEMO && sb) sb.auth.onAuthStateChange((ev) => cb(ev)); },
 };
