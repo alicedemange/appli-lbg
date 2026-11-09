@@ -37,15 +37,17 @@ function App() {
   const [base, setBase] = useState(null);
   const route = useRoute();
 
-  const loadMe = async () => { try { setMe(await auth.current()); } catch (e) { fail(e); setMe(null); throw e; } };
+  const [bootErr, setBootErr] = useState('');
+  const loadMe = async () => { try { setMe(await timed('Lecture de ton profil', auth.current())); } catch (e) { setBootErr(e.message); fail(e); setMe(null); throw e; } };
   const reloadBase = async () => {
     const [profiles, horses, riders, contacts] = await Promise.all([
-      db.select('profiles', { order: 'full_name' }), db.select('horses', { order: 'name' }), db.select('horse_riders'), db.select('contacts', { order: 'name' }),
+      timed('Membres', db.select('profiles', { order: 'full_name' })), timed('Chevaux', db.select('horses', { order: 'name' })),
+      timed('DP/TP', db.select('horse_riders')), timed('Contacts', db.select('contacts', { order: 'name' })),
     ]);
-    setBase({ profiles, horses, riders, contacts });
+    setBase({ profiles, horses, riders, contacts }); setBootErr('');
   };
   useEffect(() => { initDb().then(loadMe).catch((e) => { fail(e); setMe(null); }); auth.onChange((ev) => { if (ev === 'SIGNED_OUT') { setMe(null); setBase(null); } }); }, []);
-  useEffect(() => { if (isActive(me)) { reloadBase().catch(fail); purgeChats().catch(() => {}); } }, [me?.id, me?.role]);
+  useEffect(() => { if (isActive(me)) { reloadBase().catch((e) => { console.error(e); setBootErr(e.message); }); purgeChats().catch(() => {}); } }, [me?.id, me?.role]);
 
   const ctx = useMemo(() => {
     if (!me || !base) return null;
@@ -67,11 +69,11 @@ function App() {
     return c;
   }, [me, base]);
 
-  if (me === undefined) return html`<div class="boot"><${FullLogo} width=${220} /><${Loading} /></div>`;
+  if (me === undefined) return html`<${Boot} err=${bootErr} />`;
   if (!me) return html`<${Login} onDone=${loadMe} />`;
   if (me.role === 'archive') return html`<${Archived} />`;
   if (!isActive(me)) return html`<${ClaimCode} me=${me} onDone=${loadMe} />`;
-  if (!ctx) return html`<div class="boot"><${FullLogo} width=${220} /><${Loading} /></div>`;
+  if (!ctx) return html`<${Boot} err=${bootErr} />`;
 
   let page;
   const [name, ...rest] = route.split('-'); const arg = rest.join('-');
@@ -94,6 +96,23 @@ function App() {
     default: page = html`<${Home} />`;
   }
   return html`<${AppCtx.Provider} value=${ctx}><${Shell} route=${name === 'cheval' ? 'chevaux' : name}>${page}</${Shell}><${ModalHost} /></${AppCtx.Provider}>`;
+}
+
+const timed = (label, p, ms = 20000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(label + ' : le serveur ne répond pas (20 s)')), ms))])
+  .catch((e) => { throw e?.message?.startsWith(label) ? e : new Error(label + ' : ' + (e?.message || e)); });
+
+/** Écran de chargement qui ne tourne jamais dans le vide : message d'erreur + boutons. */
+function Boot({ err }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSlow(true), 8000); return () => clearTimeout(t); }, []);
+  return html`<div class="boot"><${FullLogo} width=${220} />
+    ${!err && html`<${Loading} />`}
+    ${(err || slow) && html`<div class="boot-help">
+      ${err ? html`<div class="login-err" role="alert">⚠️ ${err}</div>` : html`<p>Le chargement prend plus de temps que prévu…</p>`}
+      <div class="boot-btns"><button class="btn primary" onClick=${() => location.reload()}>Réessayer</button>
+        <button class="btn ghost" onClick=${async () => { try { await auth.signOut(); } catch (e) {} location.reload(); }}>Se déconnecter</button></div>
+      <small class="muted">Fais une capture de cet écran pour l’envoyer si ça continue.</small></div>`}
+  </div>`;
 }
 
 function Shell({ route, children }) {
