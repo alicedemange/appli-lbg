@@ -661,3 +661,10 @@ a.chat-row { color: var(--ink); }
 .notif-howto ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
 .notif-howto p { margin: 4px 0; font-size: 14px; }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Photo de profil */
+img.av-img { object-fit: cover; background: #e9e1d6; padding: 0; }
+.av-edit { position: relative; cursor: pointer; display: inline-block; flex: none; }
+.av-edit .av-cam { position: absolute; right: -2px; bottom: -2px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 1px solid var(--line); display: grid; place-items: center; font-size: 13px; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+.av-actions { margin-top: 6px; font-size: 13.5px; color: var(--muted); }
+.link-btn { background: none; border: 0; padding: 0; color: var(--brown, #7a5c4f); font-weight: 600; font-size: 13.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font-family: inherit; }
