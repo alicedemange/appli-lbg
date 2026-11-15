@@ -670,3 +670,7 @@ img.av-img { object-fit: cover; background: #e9e1d6; padding: 0; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--brown, #7a5c4f); font-weight: 600; font-size: 13.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font-family: inherit; }
 .lot-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .danger-txt { color: #b3362c !important; }
+.batch-sum { background: color-mix(in srgb, var(--brown, #7a5c4f) 10%, white); border-radius: 10px; padding: 8px 10px; margin: 2px 0; }
+.batch-add { border: 1px dashed var(--line); border-radius: 12px; padding: 8px 12px; }
+.batch-add summary { cursor: pointer; font-weight: 600; color: var(--navy); }
+.batch-add[open] summary { margin-bottom: 6px; }
